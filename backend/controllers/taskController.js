@@ -34,3 +34,29 @@ exports.addTask = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+exports.updateTask = async (req, res) => {
+  const { id, project, description } = req.body;
+
+  try {
+    await db.query(
+      'UPDATE tasks SET project = ?, description = ? WHERE id = ?',
+      [project, description, id]
+    );
+    res.json({ message: 'Task updated successfully' });
+  } catch (err) {
+    console.error('Database error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.deleteTask = async (req, res) => {
+  const { id } = req.params;
+  try {
+    await db.query('DELETE FROM tasks WHERE id = ?', [id]);
+    res.json({ message: 'Task deleted successfully' });
+  } catch (err) {
+    console.error('Database error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};

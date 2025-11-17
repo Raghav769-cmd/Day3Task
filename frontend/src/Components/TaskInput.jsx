@@ -9,12 +9,12 @@ const TaskInput = () => {
   const [input, setInput] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
   const [taskOptions, setTaskOptions] = useState([]);
+  const [lastTaskId, setLastTaskId] = useState(null);
+  const [startTime, setStartTime] = useState(null);
   const intervalRef = useRef(null);
 
-  // Add selected task to database with time 00:00:00
   const handleAddTaskToDB = async (startTime) => {
-    if (!input || !project) return;
-    // Prepare task data
+    if (!input || !project) return null;
     const taskData = {
       description,
       project,
@@ -31,17 +31,17 @@ const TaskInput = () => {
         body: JSON.stringify(taskData)
       });
       if (res.ok) {
+        const data = await res.json();
         setInput('');
         setProject('');
         setDescription('');
-        // Optionally show success or refresh task list
+        return data.id;
       }
     } catch (err) {
-      // Optionally handle error
     }
+    return null;
   };
 
-  // Fetch all tasks from backend when dropdown is opened
   const fetchTasks = () => {
     if (!showDropdown) {
       fetch('http://localhost:3000/api/tasks/all-tasks')
@@ -52,12 +52,23 @@ const TaskInput = () => {
     setShowDropdown((prev) => !prev);
   };
 
-  // Format Date to HH:MM:SS
   const formatSystemTime = (date) => {
     const h = String(date.getHours()).padStart(2, '0');
     const m = String(date.getMinutes()).padStart(2, '0');
     const s = String(date.getSeconds()).padStart(2, '0');
     return `${h}:${m}:${s}`;
+  };
+
+  const calculateDuration = (startTime, endTime) => {
+    const [sh, sm, ss] = startTime.split(':').map(Number);
+    const [eh, em, es] = endTime.split(':').map(Number);
+    const startSeconds = sh * 3600 + sm * 60 + ss;
+    const endSeconds = eh * 3600 + em * 60 + es;
+    let diffSeconds = endSeconds - startSeconds;
+    if (diffSeconds < 0) diffSeconds += 86400;
+    const h = Math.floor(diffSeconds / 3600);
+    const m = Math.floor((diffSeconds % 3600) / 60);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   };
 
   const handleStartStop = () => {
@@ -69,7 +80,6 @@ const TaskInput = () => {
     }
   };
 
-  // Timer effect for system time
   useEffect(() => {
     if (timerActive) {
       intervalRef.current = setInterval(() => {
@@ -87,7 +97,6 @@ const TaskInput = () => {
 
   const handleTaskSelect = (taskName) => {
     setInput(taskName);
-    // Use name as description since there is no description field
     setDescription(taskName);
     setShowDropdown(false);
   };
@@ -107,7 +116,7 @@ return (
         onChange={e => setProject(e.target.value)}
       />
       <div className="relative flex items-center">
-        <button className="text-blue-500 px-2 cursor-pointer hover:bg-gray-200 rounded transition-colors duration-200" type="button" onClick={fetchTasks}>
+        <button className="text-blue-500 px-2 cursor-pointer hover:bg-gray-300 rounded transition-colors duration-200" type="button" onClick={fetchTasks}>
           Task
         </button>
         {showDropdown && (
@@ -126,7 +135,7 @@ return (
         )}
       </div>
       <button
-        className={`mx-2 px-2 py-1 rounded ${dollarActive ? 'bg-blue-100 text-blue-700 border border-blue-400' : 'text-blue-500'}`}
+        className={`cursor-pointer mx-2 px-2 py-1 rounded ${dollarActive ? 'bg-blue-100 text-blue-700 border border-blue-400' : 'text-blue-500'}`}
         onClick={handleDollarToggle}
         type="button"
       >
@@ -134,17 +143,30 @@ return (
       </button>
       <span className="mx-2 font-mono w-24 text-center">{timerActive ? currentTime : '00:00:00'}</span>
       <button
-        className={`px-4 py-2 rounded ml-2 ${timerActive ? 'bg-red-500' : 'bg-blue-500'} text-white`}
+        className={`cursor-pointer hover:bg-blue-400 transition-colors duration-200 px-4 py-2 rounded ml-2 ${timerActive ? 'bg-red-500' : 'bg-blue-500'} text-white`}
         onClick={async () => {
           if (!timerActive) {
-            // On START: get current time, add to DB, and start timer
-            const startTime = formatSystemTime(new Date());
-            await handleAddTaskToDB(startTime);
-            setTimerActive(true);
-            setCurrentTime(startTime);
+            const startTimeStr = formatSystemTime(new Date());
+            const id = await handleAddTaskToDB(startTimeStr);
+            if (id) {
+              setLastTaskId(id);
+              setTimerActive(true);
+              setStartTime(startTimeStr);
+              setCurrentTime(startTimeStr);
+            }
           } else {
-            // On STOP: just stop timer
+            if (lastTaskId) {
+              const endTime = formatSystemTime(new Date());
+              const duration = calculateDuration(startTime, endTime);
+              await fetch('http://localhost:3000/api/tasks/update', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: lastTaskId, end_time: endTime, duration })
+              });
+            }
             setTimerActive(false);
+            setLastTaskId(null);
+            setStartTime(null);
           }
         }}
         type="button"
